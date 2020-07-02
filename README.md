@@ -3,6 +3,8 @@ This is the code used in the paper "[H-Mem: Harnessing synaptic plasticity with 
 Networks](https://www.biorxiv.org/content/10.1101/2020.07.01.180372v1)" for training H-Mem on a single-shot
 image association task and on the bAbI question-answering tasks.
 
+![H-Mem schema](https://i.imgur.com/fK3UWaP.png)
+
 ## Setup
 You need [TensorFlow](https://www.tensorflow.org/) to run this code. We tested it on TensorFlow version 2.1.0.
 Additional dependencies are listed in [environment.yml](environment.yml). If you use
