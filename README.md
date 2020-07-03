@@ -6,7 +6,7 @@ image association task and on the bAbI question-answering tasks.
 ![H-Mem schema](https://i.imgur.com/fK3UWaP.png)
 
 ## Setup
-You need [TensorFlow](https://www.tensorflow.org/) to run this code. We tested it on TensorFlow version 2.1.0.
+You need [TensorFlow](https://www.tensorflow.org/) to run this code. We tested it on TensorFlow version 2.1.
 Additional dependencies are listed in [environment.yml](environment.yml). If you use
 [Conda](https://docs.conda.io/en/latest/), run
 
