@@ -159,7 +159,7 @@ with strategy.scope():
                           use_bias=False,
                           activation='relu',
                           kernel_initializer='he_uniform',
-                          kernel_regularizer=tf.keras.regularizers.l1_l2(l2=1e-3),
+                          kernel_regularizer=tf.keras.regularizers.l2(1e-3),
                           name='entity_extracting')(story_encoded)
 
     memory_matrix = tf.keras.layers.RNN(WritingCell(units=args.memory_size,
@@ -172,7 +172,7 @@ with strategy.scope():
                                                     use_bias=False,
                                                     activation='relu',
                                                     kernel_initializer='he_uniform',
-                                                    kernel_regularizer=tf.keras.regularizers.l1_l2(l2=1e-3)),
+                                                    kernel_regularizer=tf.keras.regularizers.l2(1e-3)),
                                         name='entity_reading')(query_encoded, constants=[memory_matrix])
 
     outputs = tf.keras.layers.Dense(vocab_size,
