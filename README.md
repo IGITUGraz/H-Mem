@@ -17,6 +17,23 @@ conda env create --file=environment.yml
 to install the required packages and their dependencies.
 
 ## Usage
+
+### Single-shot associations with H-Mem
+To start training on the single-shot image association task, run
+
+```bash
+python image_association_task.py
+```
+
+Set the command line argument `--delay` to set the between-image delay (in the paper we used delays ranging from 0 to 40). Run the following command
+
+```bash
+python image_association_task_lstm.py
+```
+
+to start training the LSTM model on this task (the default value for the between-image delay is 0; you can change it with the command line argument `--delay`).
+
+### Question answering with H-Mem
 Run the following command
 
 ```bash
