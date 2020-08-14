@@ -6,6 +6,7 @@ from tensorflow.keras.callbacks import Callback
 
 
 class MyCSVLogger(Callback):
+
     def __init__(self, filename):
         self.filename = filename
 

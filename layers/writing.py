@@ -5,7 +5,6 @@ from tensorflow.keras.layers import Layer
 
 
 class Writing(Layer):
-    """TODO"""
 
     def __init__(self,
                  units,
@@ -42,7 +41,6 @@ class Writing(Layer):
 
 
 class WritingCell(Layer):
-    """TODO"""
 
     def __init__(self,
                  units,

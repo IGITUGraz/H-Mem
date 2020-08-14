@@ -5,7 +5,6 @@ from tensorflow.keras.layers import Dense, Layer
 
 
 class Extracting(Layer):
-    """TODO"""
 
     def __init__(self,
                  units,
