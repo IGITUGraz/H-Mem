@@ -6,7 +6,6 @@ from tensorflow.keras.layers import Dense, Layer
 
 
 class Reading(Layer):
-    """TODO"""
 
     def __init__(self,
                  units,
@@ -46,7 +45,6 @@ class Reading(Layer):
 
 
 class ReadingCell(Layer):
-    """TODO"""
 
     def __init__(self,
                  units,
