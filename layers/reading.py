@@ -39,7 +39,7 @@ class Reading(Layer):
 
         v = K.batch_dot(k, memory_matrix)
 
-        return v
+        return k, v
 
     def compute_mask(self, inputs, mask=None):
         return mask
@@ -69,6 +69,8 @@ class ReadingCell(Layer):
                            kernel_initializer=self.kernel_initializer,
                            kernel_regularizer=self.kernel_regularizer)
 
+        self.ln1 = tf.keras.layers.LayerNormalization()
+
     @property
     def state_size(self):
         return self.units
@@ -82,9 +84,11 @@ class ReadingCell(Layer):
 
         k = self.dense(tf.concat([inputs, v], axis=1))
 
+        k = self.ln1(k)
+
         v = K.batch_dot(k, memory_matrix)
 
-        return v, v
+        return [k, v], v
 
     def compute_mask(self, inputs, mask=None):
         return mask

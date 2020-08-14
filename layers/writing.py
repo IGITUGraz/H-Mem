@@ -2,6 +2,7 @@
 
 import tensorflow as tf
 from tensorflow.keras.layers import Layer
+import tensorflow.keras.backend as K
 
 
 class Writing(Layer):
@@ -73,16 +74,33 @@ class WritingCell(Layer):
                                          initializer=tf.keras.initializers.Constant(self._gamma_neg),
                                          dtype=self.dtype, name='gamma_neg')
 
+        self.dense1 = tf.keras.layers.Dense(units=self.units)
+
+        self.ln1 = tf.keras.layers.LayerNormalization()
+        self.ln2 = tf.keras.layers.LayerNormalization()
+        self.ln3 = tf.keras.layers.LayerNormalization()
+
         super().build(input_shape)
 
     def call(self, inputs, states, mask=None):
         memory_matrix = states[0]
         k, v = tf.split(inputs, 2, axis=-1)
 
+        k = self.ln1(k)
+        v = self.ln2(v)
+
+        v_h = K.batch_dot(k, memory_matrix)
+
+        v = self.dense1(tf.concat([v, v_h], axis=-1))
+
+        v = self.ln3(v)
+
         k = tf.expand_dims(k, 2)
         v = tf.expand_dims(v, 1)
 
         hebb = self.gamma_pos * (self.w_max - memory_matrix) * k * v - self.gamma_neg * memory_matrix * k**2
+        # hebb = self.gamma_pos * (self.w_max - memory_matrix) * k * v
+
         memory_matrix = hebb + memory_matrix
 
         return memory_matrix, memory_matrix
