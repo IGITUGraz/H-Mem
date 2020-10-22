@@ -25,9 +25,9 @@ parser.add_argument('--task_id', type=int, default=1)
 parser.add_argument('--max_num_sentences', type=int, default=-1)
 parser.add_argument('--training_set_size', type=str, default='10k')
 
-parser.add_argument('--epochs', type=int, default=200)
+parser.add_argument('--epochs', type=int, default=250)
 parser.add_argument('--learning_rate', type=float, default=0.003)
-parser.add_argument('--batch_size_per_replica', type=int, default=32)
+parser.add_argument('--batch_size_per_replica', type=int, default=128)
 parser.add_argument('--random_state', type=int, default=None)
 parser.add_argument('--max_grad_norm', type=float, default=20.0)
 parser.add_argument('--validation_split', type=float, default=0.1)
@@ -183,19 +183,7 @@ with strategy.scope():
                                             return_sequences=True, name='entity_reading')(
                                                     query_encoded, constants=[memory_matrix])
 
-    # queried_value = tf.keras.layers.Lambda(lambda x: x[:, -1, :])(queried_values)
-
-    # queried_value = tf.keras.layers.LSTM(100,
-    #                                      kernel_regularizer=tf.keras.regularizers.l2(1e-3))(queried_values)
-
-    # queried_value = tf.keras.layers.SimpleRNN(100, kernel_regularizer=tf.keras.regularizers.l2(1e-3),
-    #                                      )(queried_values)
-
-    queried_value = tf.keras.layers.Lambda(lambda x: tf.keras.backend.sum(x, axis=1))(queried_values)
-
-    # queried_value = tf.keras.layers.Attention()([k, queried_values])
-
-    # queried_value = tf.keras.layers.GlobalAveragePooling1D()(queried_value)
+    queried_value = tf.keras.layers.Lambda(lambda x: x[:, -1, :])(queried_values)
 
     outputs = tf.keras.layers.Dense(vocab_size,
                                     use_bias=False,
@@ -215,8 +203,13 @@ model.summary()
 
 # Train and evaluate.
 def lr_scheduler(epoch):
-    # return args.learning_rate * 0.85**tf.math.floor(epoch / 20)
-    return args.learning_rate
+    # return args.learning_rate
+    # return args.learning_rate * 0.75**tf.math.floor(epoch / 100)
+    if epoch < 150:
+        return args.learning_rate
+    else:
+        # return args.learning_rate * 0.85**tf.math.floor(epoch / 50)
+        return args.learning_rate * tf.math.exp(0.01 * (150 - epoch))
 
 
 callbacks = []
@@ -237,12 +230,16 @@ model.evaluate(x=x_test, y=y_test, callbacks=callbacks, verbose=2)
 
 if args.make_plots:
 
+    import utils.configure_seaborn as cs
+    import seaborn as sns
     import matplotlib as mpl
     mpl.use('Agg')
     import matplotlib.pyplot as plt
     from scipy import spatial
 
-    examples = range(1)
+    sns.set(context='paper', style='ticks', rc=cs.rc_params)
+
+    examples = range(10)  # [0, 1, 2, 3]  # 2  # range(1)
     for example in examples:
         x = [testS[example][np.newaxis, :, :], testQ[example][np.newaxis, :, :]]
 
@@ -278,12 +275,23 @@ if args.make_plots:
         ax[0].axes.get_yaxis().set_visible(False)
         ax[0].axes.get_xaxis().set_visible(False)
 
-        ax[1].pcolormesh(tf.transpose(keys_story[0]), cmap='coolwarm')
-        ax[2].pcolormesh(tf.transpose(values_story[0]), cmap='coolwarm')
+        vmin_k = np.minimum(np.min(keys_story[0]), np.min(keys_query[0]))
+        vmax_k = np.maximum(np.max(keys_story[0]), np.max(keys_query[0]))
+        print(vmin_k, vmax_k)
+
+        vmin_v = np.minimum(np.min(values_story[0]), np.min(queried_values[0]))
+        vmax_v = np.maximum(np.max(values_story[0]), np.max(queried_values[0]))
+        print(vmin_v, vmax_v)
+
+        vmin = np.minimum(vmin_k, vmin_v)
+        vmax = np.maximum(vmax_k, vmax_v)
+
+        ax[1].pcolormesh(tf.transpose(keys_story[0]), cmap='Blues')  # , vmin=vmin_k, vmax=vmax_k)
+        ax[2].pcolormesh(tf.transpose(values_story[0]), cmap='Oranges')  # , vmin=vmin_v, vmax=vmax_v)
         ax[1].set_ylabel('keys story')
         ax[2].set_ylabel('values story')
         ax[2].set_xlim([0, 10])
-        fig.savefig('entities-writing-{0}.png'.format(example), dpi=fig.dpi)
+        fig.savefig('entities-writing-{0}.pdf'.format(example), dpi=fig.dpi)
 
         fig, ax = plt.subplots(nrows=3, ncols=1, sharex=True)
         # plt.suptitle('entities reading')
@@ -294,26 +302,29 @@ if args.make_plots:
         ax[0].axes.get_yaxis().set_visible(False)
         ax[0].axes.get_xaxis().set_visible(False)
 
-        ax[1].pcolormesh(tf.transpose(keys_query[0]), cmap='coolwarm')
-        ax[2].pcolormesh(tf.transpose(queried_values[0]), cmap='coolwarm')
-        ax[1].set_ylabel('keys query')
+        ax[1].pcolormesh(tf.transpose(keys_query[0]), cmap='Blues')  # , vmin=vmin_k, vmax=vmax_k)
+        ax[2].pcolormesh(tf.transpose(queried_values[0]), cmap='Oranges')  # , vmin=vmin_v, vmax=vmax_v)
+        ax[1].set_ylabel('key query')
         ax[2].set_ylabel('queried value')
-        fig.savefig('entities-reading-{0}.png'.format(example), dpi=fig.dpi)
+        fig.savefig('entities-reading-{0}.pdf'.format(example), dpi=fig.dpi)
+
+        # my_cmap = sns.color_palette("crest", as_cmap=True)
+        my_cmap = sns.color_palette("ch:start=.2,rot=-.3", as_cmap=True)
 
         fig, ax = plt.subplots(nrows=1, ncols=1)
         plt.suptitle('cosine sim keys')
-        cax = ax.matshow(cosine_sim_keys[:10, :], cmap='coolwarm')
+        cax = ax.matshow(cosine_sim_keys[:10, :], cmap=my_cmap) # , vmin=-1, vmax=1)
         fig.colorbar(cax)
         ax.set_ylabel('keys story')
         ax.set_xlabel('keys query')
-        fig.savefig('cosine-sim-keys-{0}.png'.format(example), dpi=fig.dpi)
+        fig.savefig('cosine-sim-keys-{0}.pdf'.format(example), dpi=fig.dpi)
 
         fig, ax = plt.subplots(nrows=1, ncols=1)
         plt.suptitle('cosine sim values')
-        cax = ax.matshow(cosine_sim_values[:10, :], cmap='coolwarm')
+        cax = ax.matshow(cosine_sim_values[:10, :], cmap=my_cmap) # , vmin=-1, vmax=1)
         fig.colorbar(cax)
         ax.set_ylabel('values story')
         ax.set_xlabel('queried values')
-        fig.savefig('cosine-sim-values-{0}.png'.format(example), dpi=fig.dpi)
+        fig.savefig('cosine-sim-values-{0}.pdf'.format(example), dpi=fig.dpi)
 
         # plt.show()
