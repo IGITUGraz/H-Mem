@@ -38,7 +38,7 @@ class Reading(Layer):
 
         v = K.batch_dot(k, memory_matrix)
 
-        return v
+        return k, v
 
     def compute_mask(self, inputs, mask=None):
         return mask
@@ -82,7 +82,7 @@ class ReadingCell(Layer):
 
         v = K.batch_dot(k, memory_matrix)
 
-        return v, v
+        return [k, v], v
 
     def compute_mask(self, inputs, mask=None):
         return mask
