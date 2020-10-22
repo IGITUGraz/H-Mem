@@ -9,14 +9,13 @@ from itertools import chain
 
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras import Model
-from tensorflow.keras.layers import TimeDistributed
-
 from data.babi_data import download, load_task, tasks, vectorize_data
 from layers.encoding import Encoding
 from layers.extracting import Extracting
 from layers.reading import ReadingCell
 from layers.writing import WritingCell
+from tensorflow.keras import Model
+from tensorflow.keras.layers import TimeDistributed
 from utils.logger import MyCSVLogger
 
 strategy = tf.distribute.MirroredStrategy()
@@ -24,7 +23,7 @@ strategy = tf.distribute.MirroredStrategy()
 parser = argparse.ArgumentParser()
 parser.add_argument('--task_id', type=int, default=1)
 parser.add_argument('--max_num_sentences', type=int, default=-1)
-parser.add_argument('--training_set_size', type=str, default='10k')
+parser.add_argument('--training_set_size', type=str, default='10k', help='`1k` or `10k`')
 
 parser.add_argument('--epochs', type=int, default=100)
 parser.add_argument('--learning_rate', type=float, default=0.003)
@@ -36,11 +35,12 @@ parser.add_argument('--validation_split', type=float, default=0.1)
 parser.add_argument('--hops', type=int, default=3)
 parser.add_argument('--memory_size', type=int, default=100)
 parser.add_argument('--embeddings_size', type=int, default=80)
+parser.add_argument('--read_before_write', type=int, default=0)
 parser.add_argument('--gamma_pos', type=float, default=0.01)
 parser.add_argument('--gamma_neg', type=float, default=0.01)
 parser.add_argument('--w_assoc_max', type=float, default=1.0)
-parser.add_argument('--encodings_type', type=str, default='learned_encoding')
-parser.add_argument('--encodings_constraint', type=str, default='mask_time_word')
+parser.add_argument('--encodings_type', type=str, default='learned_encoding',
+                    help='`identity_encoding`, `position_encoding` or `learned_encoding`')
 
 parser.add_argument('--verbose', type=int, default=1)
 parser.add_argument('--logging', type=int, default=0)
@@ -148,7 +148,7 @@ with strategy.scope():
     story_embedded = TimeDistributed(embedding, name='story_embedding')(story_input)
     query_embedded = TimeDistributed(embedding, name='query_embedding')(query_input)
 
-    encoding = Encoding(args.encodings_type, args.encodings_constraint, name='encoding')
+    encoding = Encoding(args.encodings_type, name='encoding')
     story_encoded = TimeDistributed(encoding, name='story_encoding')(story_embedded)
     query_encoded = TimeDistributed(encoding, name='query_encoding')(query_embedded)
 
@@ -163,9 +163,13 @@ with strategy.scope():
                           name='entity_extracting')(story_encoded)
 
     memory_matrix = tf.keras.layers.RNN(WritingCell(units=args.memory_size,
+                                                    read_before_write=args.read_before_write,
+                                                    use_bias=False,
                                                     gamma_pos=args.gamma_pos,
                                                     gamma_neg=args.gamma_neg,
-                                                    w_assoc_max=args.w_assoc_max),
+                                                    w_assoc_max=args.w_assoc_max,
+                                                    kernel_initializer='he_uniform',
+                                                    kernel_regularizer=tf.keras.regularizers.l2(1e-3)),
                                         name='entity_writing')(entities)
 
     queried_value = tf.keras.layers.RNN(ReadingCell(units=args.memory_size,
@@ -193,7 +197,13 @@ model.summary()
 
 # Train and evaluate.
 def lr_scheduler(epoch):
-    return args.learning_rate * 0.85**tf.math.floor(epoch / 20)
+    if args.read_before_write:
+        if epoch < 150:
+            return args.learning_rate
+        else:
+            return args.learning_rate * tf.math.exp(0.01 * (150 - epoch))
+    else:
+        return args.learning_rate * 0.85**tf.math.floor(epoch / 20)
 
 
 callbacks = []
