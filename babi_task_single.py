@@ -23,9 +23,9 @@ strategy = tf.distribute.MirroredStrategy()
 parser = argparse.ArgumentParser()
 parser.add_argument('--task_id', type=int, default=1)
 parser.add_argument('--max_num_sentences', type=int, default=-1)
-parser.add_argument('--training_set_size', type=str, default='10k')
+parser.add_argument('--training_set_size', type=str, default='10k', help='`1k` or `10k`')
 
-parser.add_argument('--epochs', type=int, default=250)
+parser.add_argument('--epochs', type=int, default=100)
 parser.add_argument('--learning_rate', type=float, default=0.003)
 parser.add_argument('--batch_size_per_replica', type=int, default=128)
 parser.add_argument('--random_state', type=int, default=None)
@@ -35,15 +35,15 @@ parser.add_argument('--validation_split', type=float, default=0.1)
 parser.add_argument('--hops', type=int, default=3)
 parser.add_argument('--memory_size', type=int, default=100)
 parser.add_argument('--embeddings_size', type=int, default=80)
+parser.add_argument('--read_before_write', type=int, default=0)
 parser.add_argument('--gamma_pos', type=float, default=0.01)
 parser.add_argument('--gamma_neg', type=float, default=0.01)
 parser.add_argument('--w_assoc_max', type=float, default=1.0)
-parser.add_argument('--encodings_type', type=str, default='learned_encoding')
-parser.add_argument('--encodings_constraint', type=str, default='mask_time_word')
+parser.add_argument('--encodings_type', type=str, default='learned_encoding',
+                    help='`identity_encoding`, `position_encoding` or `learned_encoding`')
 
 parser.add_argument('--verbose', type=int, default=1)
 parser.add_argument('--logging', type=int, default=0)
-parser.add_argument('--make_plots', type=int, default=0)
 args = parser.parse_args()
 
 batch_size = args.batch_size_per_replica * strategy.num_replicas_in_sync
@@ -148,7 +148,7 @@ with strategy.scope():
     story_embedded = TimeDistributed(embedding, name='story_embedding')(story_input)
     query_embedded = TimeDistributed(embedding, name='query_embedding')(query_input)
 
-    encoding = Encoding(args.encodings_type, args.encodings_constraint, name='encoding')
+    encoding = Encoding(args.encodings_type, name='encoding')
     story_encoded = TimeDistributed(encoding, name='story_encoding')(story_embedded)
     query_encoded = TimeDistributed(encoding, name='query_encoding')(query_embedded)
 
@@ -163,27 +163,21 @@ with strategy.scope():
                           name='entity_extracting')(story_encoded)
 
     memory_matrix = tf.keras.layers.RNN(WritingCell(units=args.memory_size,
+                                                    read_before_write=args.read_before_write,
+                                                    use_bias=False,
                                                     gamma_pos=args.gamma_pos,
                                                     gamma_neg=args.gamma_neg,
-                                                    w_assoc_max=args.w_assoc_max),
+                                                    w_assoc_max=args.w_assoc_max,
+                                                    kernel_initializer='he_uniform',
+                                                    kernel_regularizer=tf.keras.regularizers.l2(1e-3)),
                                         name='entity_writing')(entities)
 
-    # queried_value = tf.keras.layers.RNN(ReadingCell(units=args.memory_size,
-    #                                                 use_bias=False,
-    #                                                 activation='relu',
-    #                                                 kernel_initializer='he_uniform',
-    #                                                 kernel_regularizer=tf.keras.regularizers.l2(1e-3)),
-    #                                     name='entity_reading')(query_encoded, constants=[memory_matrix])
-
-    k, queried_values = tf.keras.layers.RNN(ReadingCell(units=args.memory_size,
-                                                        use_bias=False,
-                                                        activation='relu',
-                                                        kernel_initializer='he_uniform',
-                                                        kernel_regularizer=tf.keras.regularizers.l2(1e-3)),
-                                            return_sequences=True, name='entity_reading')(
-                                                    query_encoded, constants=[memory_matrix])
-
-    queried_value = tf.keras.layers.Lambda(lambda x: x[:, -1, :])(queried_values)
+    queried_value = tf.keras.layers.RNN(ReadingCell(units=args.memory_size,
+                                                    use_bias=False,
+                                                    activation='relu',
+                                                    kernel_initializer='he_uniform',
+                                                    kernel_regularizer=tf.keras.regularizers.l2(1e-3)),
+                                        name='entity_reading')(query_encoded, constants=[memory_matrix])
 
     outputs = tf.keras.layers.Dense(vocab_size,
                                     use_bias=False,
@@ -203,13 +197,13 @@ model.summary()
 
 # Train and evaluate.
 def lr_scheduler(epoch):
-    # return args.learning_rate
-    # return args.learning_rate * 0.75**tf.math.floor(epoch / 100)
-    if epoch < 150:
-        return args.learning_rate
+    if args.read_before_write:
+        if epoch < 150:
+            return args.learning_rate
+        else:
+            return args.learning_rate * tf.math.exp(0.01 * (150 - epoch))
     else:
-        # return args.learning_rate * 0.85**tf.math.floor(epoch / 50)
-        return args.learning_rate * tf.math.exp(0.01 * (150 - epoch))
+        return args.learning_rate * 0.85**tf.math.floor(epoch / 20)
 
 
 callbacks = []
@@ -227,104 +221,3 @@ if args.logging:
         args.task_id, args.training_set_size, args.encodings_type, args.hops, args.random_state))))
 
 model.evaluate(x=x_test, y=y_test, callbacks=callbacks, verbose=2)
-
-if args.make_plots:
-
-    import utils.configure_seaborn as cs
-    import seaborn as sns
-    import matplotlib as mpl
-    mpl.use('Agg')
-    import matplotlib.pyplot as plt
-    from scipy import spatial
-
-    sns.set(context='paper', style='ticks', rc=cs.rc_params)
-
-    examples = range(10)  # [0, 1, 2, 3]  # 2  # range(1)
-    for example in examples:
-        x = [testS[example][np.newaxis, :, :], testQ[example][np.newaxis, :, :]]
-
-        extracting_layer = Model(inputs=model.input, outputs=model.get_layer('entity_extracting').output)
-        entities = extracting_layer.predict(x)
-        keys_story, values_story = tf.split(entities, 2, axis=-1)
-
-        reading_layer = Model(inputs=model.input, outputs=model.get_layer('entity_reading').output)
-        keys_query, queried_values = reading_layer.predict(x)
-
-        print(test[example])
-
-        print(' '.join(test[example][0][0]))
-
-        cosine_sim_keys = np.zeros((x[0].shape[1], args.hops))
-        for i, key_story in enumerate(keys_story[0]):
-            for j, key_query in enumerate(keys_query[0]):
-                cosine_sim_keys[i, j] = 1 - spatial.distance.cosine(key_story, key_query)
-        print(cosine_sim_keys)
-
-        cosine_sim_values = np.zeros((x[0].shape[1], args.hops))
-        for i, value_story in enumerate(values_story[0]):
-            for j, queried_value in enumerate(queried_values[0]):
-                cosine_sim_values[i, j] = 1 - spatial.distance.cosine(value_story, queried_value)
-        print(cosine_sim_values)
-
-        fig, ax = plt.subplots(nrows=3, ncols=1, sharex=True)
-        # plt.suptitle('entities writing')
-        for i, t in enumerate(test[example][0]):
-            ax[0].text(0.5+i*1, 0.0, ' '.join(t), {'ha': 'center', 'va': 'bottom'},
-                       fontsize=7, rotation=90)
-        ax[0].set_frame_on(False)
-        ax[0].axes.get_yaxis().set_visible(False)
-        ax[0].axes.get_xaxis().set_visible(False)
-
-        vmin_k = np.minimum(np.min(keys_story[0]), np.min(keys_query[0]))
-        vmax_k = np.maximum(np.max(keys_story[0]), np.max(keys_query[0]))
-        print(vmin_k, vmax_k)
-
-        vmin_v = np.minimum(np.min(values_story[0]), np.min(queried_values[0]))
-        vmax_v = np.maximum(np.max(values_story[0]), np.max(queried_values[0]))
-        print(vmin_v, vmax_v)
-
-        vmin = np.minimum(vmin_k, vmin_v)
-        vmax = np.maximum(vmax_k, vmax_v)
-
-        ax[1].pcolormesh(tf.transpose(keys_story[0]), cmap='Blues')  # , vmin=vmin_k, vmax=vmax_k)
-        ax[2].pcolormesh(tf.transpose(values_story[0]), cmap='Oranges')  # , vmin=vmin_v, vmax=vmax_v)
-        ax[1].set_ylabel('keys story')
-        ax[2].set_ylabel('values story')
-        ax[2].set_xlim([0, 10])
-        fig.savefig('entities-writing-{0}.pdf'.format(example), dpi=fig.dpi)
-
-        fig, ax = plt.subplots(nrows=3, ncols=1, sharex=True)
-        # plt.suptitle('entities reading')
-        for i in range(args.hops):
-            ax[0].text(0.5+i*1, 0.0, ' '.join(test[example][1]), {'ha': 'center', 'va': 'bottom'},
-                       fontsize=7, rotation=90)
-        ax[0].set_frame_on(False)
-        ax[0].axes.get_yaxis().set_visible(False)
-        ax[0].axes.get_xaxis().set_visible(False)
-
-        ax[1].pcolormesh(tf.transpose(keys_query[0]), cmap='Blues')  # , vmin=vmin_k, vmax=vmax_k)
-        ax[2].pcolormesh(tf.transpose(queried_values[0]), cmap='Oranges')  # , vmin=vmin_v, vmax=vmax_v)
-        ax[1].set_ylabel('key query')
-        ax[2].set_ylabel('queried value')
-        fig.savefig('entities-reading-{0}.pdf'.format(example), dpi=fig.dpi)
-
-        # my_cmap = sns.color_palette("crest", as_cmap=True)
-        my_cmap = sns.color_palette("ch:start=.2,rot=-.3", as_cmap=True)
-
-        fig, ax = plt.subplots(nrows=1, ncols=1)
-        plt.suptitle('cosine sim keys')
-        cax = ax.matshow(cosine_sim_keys[:10, :], cmap=my_cmap) # , vmin=-1, vmax=1)
-        fig.colorbar(cax)
-        ax.set_ylabel('keys story')
-        ax.set_xlabel('keys query')
-        fig.savefig('cosine-sim-keys-{0}.pdf'.format(example), dpi=fig.dpi)
-
-        fig, ax = plt.subplots(nrows=1, ncols=1)
-        plt.suptitle('cosine sim values')
-        cax = ax.matshow(cosine_sim_values[:10, :], cmap=my_cmap) # , vmin=-1, vmax=1)
-        fig.colorbar(cax)
-        ax.set_ylabel('values story')
-        ax.set_xlabel('queried values')
-        fig.savefig('cosine-sim-values-{0}.pdf'.format(example), dpi=fig.dpi)
-
-        # plt.show()

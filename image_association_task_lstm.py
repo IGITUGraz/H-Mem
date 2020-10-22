@@ -15,7 +15,7 @@ strategy = tf.distribute.MirroredStrategy()
 parser = argparse.ArgumentParser()
 parser.add_argument('--delay', type=int, default=0)
 parser.add_argument('--timesteps', type=int, default=3)
-parser.add_argument('--delay_padding', type=str, default='random')
+parser.add_argument('--delay_padding', type=str, default='random', help='`zeros` or `random`')
 
 parser.add_argument('--epochs', type=int, default=100)
 parser.add_argument('--batch_size_per_replica', type=int, default=32)
