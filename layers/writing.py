@@ -2,6 +2,7 @@
 
 import tensorflow as tf
 from tensorflow.keras.layers import Layer
+import tensorflow.keras.backend as K
 
 
 class Writing(Layer):
@@ -47,6 +48,10 @@ class WritingCell(Layer):
                  gamma_pos,
                  gamma_neg,
                  w_assoc_max,
+                 use_bias=False,
+                 read_before_write=False,
+                 kernel_initializer=None,
+                 kernel_regularizer=None,
                  learn_gamma_pos=False,
                  learn_gamma_neg=False,
                  **kwargs):
@@ -56,8 +61,21 @@ class WritingCell(Layer):
         self.w_max = w_assoc_max
         self._gamma_pos = gamma_pos
         self._gamma_neg = gamma_neg
+        self.use_bias = use_bias
+        self.read_before_write = read_before_write
+        self.kernel_initializer = kernel_initializer
+        self.kernel_regularizer = kernel_regularizer
         self.learn_gamma_pos = learn_gamma_pos
         self.learn_gamma_neg = learn_gamma_neg
+
+        if self.read_before_write:
+            self.dense = tf.keras.layers.Dense(units=self.units,
+                                               use_bias=self.use_bias,
+                                               kernel_initializer=self.kernel_initializer,
+                                               kernel_regularizer=self.kernel_regularizer)
+
+            self.ln1 = tf.keras.layers.LayerNormalization()
+            self.ln2 = tf.keras.layers.LayerNormalization()
 
     @property
     def state_size(self):
@@ -77,10 +95,18 @@ class WritingCell(Layer):
         memory_matrix = states[0]
         k, v = tf.split(inputs, 2, axis=-1)
 
+        if self.read_before_write:
+            k = self.ln1(k)
+            v_h = K.batch_dot(k, memory_matrix)
+
+            v = self.dense(tf.concat([v, v_h], axis=1))
+            v = self.ln2(v)
+
         k = tf.expand_dims(k, 2)
         v = tf.expand_dims(v, 1)
 
         hebb = self.gamma_pos * (self.w_max - memory_matrix) * k * v - self.gamma_neg * memory_matrix * k**2
+
         memory_matrix = hebb + memory_matrix
 
         return memory_matrix, memory_matrix

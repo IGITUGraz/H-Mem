@@ -8,11 +8,10 @@ from utils.word_encodings import position_encoding
 
 
 class Encoding(Layer):
-    """TODO"""
 
     def __init__(self,
                  encodings_type,
-                 encodings_constraint,
+                 encodings_constraint='mask_time_word',
                  **kwargs):
         super().__init__(**kwargs)
 

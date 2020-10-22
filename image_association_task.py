@@ -7,6 +7,7 @@ import random
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.layers import TimeDistributed
+from tensorflow.keras import Model
 
 from data.image_association_data import load_data
 from layers.extracting import Extracting
@@ -19,7 +20,7 @@ strategy = tf.distribute.MirroredStrategy()
 parser = argparse.ArgumentParser()
 parser.add_argument('--delay', type=int, default=0)
 parser.add_argument('--timesteps', type=int, default=3)
-parser.add_argument('--delay_padding', type=str, default='random')
+parser.add_argument('--delay_padding', type=str, default='random', help='`zeros` or `random`')
 
 parser.add_argument('--epochs', type=int, default=100)
 parser.add_argument('--learning_rate', type=float, default=0.001)
@@ -157,7 +158,7 @@ with strategy.scope():
                                     kernel_initializer='he_uniform',
                                     name='output')(queried_value)
 
-    model = tf.keras.Model(inputs=[input_a, input_b], outputs=outputs)
+    model = Model(inputs=[input_a, input_b], outputs=outputs)
 
     # Compile the model.
     optimizer_kwargs = {'clipnorm': args.max_grad_norm} if args.max_grad_norm else {}
