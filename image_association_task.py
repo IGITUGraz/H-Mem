@@ -20,7 +20,7 @@ strategy = tf.distribute.MirroredStrategy()
 parser = argparse.ArgumentParser()
 parser.add_argument('--delay', type=int, default=0)
 parser.add_argument('--timesteps', type=int, default=3)
-parser.add_argument('--delay_padding', type=str, default='random')
+parser.add_argument('--delay_padding', type=str, default='random', help='`zeros` or `random`')
 
 parser.add_argument('--epochs', type=int, default=100)
 parser.add_argument('--learning_rate', type=float, default=0.001)
@@ -39,7 +39,6 @@ parser.add_argument('--gamma_neg', type=float, default=0.01)
 parser.add_argument('--w_assoc_max', type=float, default=1.0)
 
 parser.add_argument('--verbose', type=int, default=1)
-parser.add_argument('--make_plots', type=int, default=0)
 args = parser.parse_args()
 
 batch_size = args.batch_size_per_replica * strategy.num_replicas_in_sync
@@ -147,12 +146,12 @@ with strategy.scope():
                                                     learn_gamma_neg=False),
                                         name='entity_writing')(entities)
 
-    _, queried_value = Reading(units=args.memory_size,
-                               use_bias=False,
-                               activation='relu',
-                               kernel_initializer='he_uniform',
-                               kernel_regularizer=tf.keras.regularizers.l2(1e-3),
-                               name='entity_reading')(features_b, constants=[memory_matrix])
+    queried_value = Reading(units=args.memory_size,
+                            use_bias=False,
+                            activation='relu',
+                            kernel_initializer='he_uniform',
+                            kernel_regularizer=tf.keras.regularizers.l2(1e-3),
+                            name='entity_reading')(features_b, constants=[memory_matrix])
 
     outputs = tf.keras.layers.Dense(10,
                                     use_bias=False,
@@ -188,31 +187,3 @@ model.fit(train_dataset,
           verbose=args.verbose)
 
 model.evaluate(test_dataset, steps=np.ceil(num_test/batch_size), verbose=2)
-
-if args.make_plots:
-
-    import matplotlib as mpl
-    mpl.use('Agg')
-    import matplotlib.pyplot as plt
-    from scipy import spatial
-
-    x = test_dataset.take(1)
-
-    extracting_layer = Model(inputs=model.input, outputs=model.get_layer('entity_extracting').output)
-    entities = extracting_layer.predict(x)[0]
-    keys_story, values_story = tf.split(entities, 2, axis=-1)
-
-    reading_layer = Model(inputs=model.input, outputs=model.get_layer('entity_reading').output)
-    key_query, queried_value = reading_layer.predict(x)
-    key_query = key_query[0]
-    queried_value = queried_value[0]
-
-    cosine_sim_keys = np.zeros((args.timesteps, 1))
-    for i, key_story in enumerate(keys_story):
-        cosine_sim_keys[i, 0] = 1 - spatial.distance.cosine(key_story, key_query)
-    print(cosine_sim_keys)
-
-    cosine_sim_values = np.zeros((args.timesteps, 1))
-    for i, value_story in enumerate(values_story):
-        cosine_sim_values[i, 0] = 1 - spatial.distance.cosine(value_story, queried_value)
-    print(cosine_sim_values)

@@ -5,5 +5,4 @@ channels:
 
 dependencies:
     - python=3.7
-    - matplotlib=3.1
     - tensorflow-gpu=2.1
