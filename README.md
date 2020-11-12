@@ -65,4 +65,5 @@ python babi_task_single.py --task_id=16 --epochs=250
 ```
 
 ## References
-* Limbacher, T., Legenstein, R. (2020). H-Mem: Harnessing synaptic plasticity with Hebbian Memory Networks bioRxiv https://www.biorxiv.org/content/10.1101/2020.07.01.180372v2
+* Limbacher, T., & Legenstein, R. (2020). H-Mem: Harnessing synaptic plasticity with Hebbian Memory Networks. Advances in Neural Information Processing Systems, 33.
+https://www.biorxiv.org/content/10.1101/2020.07.01.180372v2
